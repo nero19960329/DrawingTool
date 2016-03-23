@@ -3,122 +3,227 @@
 
 TITLE DrawingTool Application
 
-INCLUDE Irvine32.inc
-INCLUDE GraphWin.inc
+.386 
+.model flat,stdcall 
+option casemap:none
 
-INCLUDELIB Irvine32.lib
+WinMain proto :DWORD, :DWORD, :DWORD, :DWORD
+
+INCLUDE windows.inc
+INCLUDE user32.inc
+INCLUDE kernel32.inc
+INCLUDE gdi32.inc
+
+INCLUDELIB user32.lib
+INCLUDELIB kernel32.lib
+INCLUDELIB gdi32.lib
 
 ;======================== DATA ========================
 .data
 
-ErrorTitle BYTE "Error", 0
-WindowName BYTE "DrawingTool Application", 0
-className BYTE "ASMWin", 0
+; 各种编号
+IDM_OPT1  dw 301
+IDM_OPT2  dw 302
+IDM_OPT3  dw 303
+IDM_OPT4  dw 304
 
-; 定义程序窗口类结构
-MainWin WNDCLASS <NULL, WinProc, NULL, NULL, NULL, NULL, NULL, \
-    COLOR_WINDOW, NULL, className>
-msg MSGStruct <>
-hMainWnd DWORD ?
-hInstance DWORD ?
+IDB_ONE   dw 3301
+IDB_TWO   dw 3302
+IDB_THREE dw 3303
+
+; 菜单字符串
+fileMenuStr db "文件", 0
+newMenuStr db "新建", 0
+loadMenuStr db "载入", 0
+saveMenuStr db "保存", 0
+saveAsMenuStr db "另存为", 0
+
+; 按钮字符串
+lineButtonStr db "直线", 0
+
+; 类名以及程序名
+className db "DrawingWinClass", 0
+appName db "画图", 0
+
+; 句柄等变量
+hInstance HINSTANCE ?
+hMenu HMENU ?
+commandLine LPSTR ?
+
+; 杂项
+buttonStr db "Button", 0
+beginX dd 0
+beginY dd 0
+endX dd 0
+endY dd 0
+
+pointX dd 0
+pointY dd 0
+drawingFlag db 0
+
+; 工作区域
+workRegion RECT <0, 0, 1025, 525>
+
+; 结构体定义
+PAINTDATA STRUCT
+	ptBeginX dd ?
+	ptBeginY dd ?
+	ptEndX   dd ?
+	ptEndY   dd ?
+	penStyle dd ?
+PAINTDATA ENDS
 
 ;======================== CODE ========================
 .code
 
-WinMain PROC
-; 获取当前进程的句柄
-    INVOKE GetModuleHandle, NULL
-    mov hInstance, eax
-    mov MainWin.hInstance, eax
+start:
+	INVOKE GetModuleHandle, NULL
+	mov hInstance, eax
+	INVOKE GetCommandLine
+	mov commandLine, eax
+	INVOKE WinMain, hInstance, NULL, commandLine, SW_SHOWDEFAULT
+	INVOKE ExitProcess, eax
 
-; 加载程序的光标以及图标
-    INVOKE LoadIcon, NULL, IDI_APPLICATION
-    mov MainWin.hIcon, eax
-    INVOKE LoadCursor, NULL, IDC_ARROW
-    mov MainWin.hCursor, eax
+; 创建菜单
+createMenu PROC
+	LOCAL popFile: HMENU
 
-; 注册窗口类
-    INVOKE RegisterClass, ADDR MainWin
-    .IF eax == 0
-        call ErrorHandler
-        jmp Exit_Program
-    .ENDIF
+	INVOKE CreateMenu
+	.IF eax == 0
+		ret
+	.ENDIF
+	mov hMenu, eax
 
-; 创建应用程序的主窗口
-    INVOKE CreateWindowEx, 0, ADDR className,
-        ADDR WindowName, MAIN_WINDOW_STYLE,
-        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-        CW_USEDEFAULT, NULL, NULL, hInstance, NULL
+	INVOKE CreatePopupMenu
+	mov popFile, eax
+	
+	INVOKE AppendMenu, hMenu, MF_POPUP, popFile, ADDR fileMenuStr
 
-; 如果CreateWindowEx失败，显示一条消息并退出
-    .IF eax == 0
-        call ErrorHandler
-        jmp Exit_Program
-    .ENDIF
+	INVOKE AppendMenu, popFile, MF_STRING, IDM_OPT1, ADDR newMenuStr
+	INVOKE AppendMenu, popFile, MF_STRING, IDM_OPT2, ADDR loadMenuStr
+	INVOKE AppendMenu, popFile, MF_STRING, IDM_OPT3, ADDR saveMenuStr
+	INVOKE AppendMenu, popFile, MF_STRING, IDM_OPT4, ADDR saveAsMenuStr
 
-; 保存窗口句柄，显示并绘制窗口
-    mov hMainWnd, eax
-    INVOKE ShowWindow, hMainWnd, SW_SHOW
-    INVOKE UpdateWindow, hMainWnd
+	ret
 
-; 开始程序的持续消息处理循环
-Message_Loop:
-    ; 从队列中获得下一条消息
-    INVOKE GetMessage, ADDR msg, NULL, NULL, NULL
+createMenu ENDP
 
-    ; 若无消息则退出
-    .IF eax == 0
-        jmp Exit_Program
-    .ENDIF
+; 创建按钮
+createButtons PROC,
+	hWnd: HWND
+	
+	;INVOKE CreateWindowEx, NULL, ADDR buttonStr, ADDR lineButtonStr, WS_VISIBLE or WS_CHILD or BS_PUSHBUTTON, 35, 10, 80, 30, hWnd, IDB_ONE, hInstance, NULL
 
-    ; 把消息转发给程序的WinProc过程
-    INVOKE DispatchMessage, ADDR msg
-    jmp Message_Loop
+	ret
 
-Exit_Program:
-    INVOKE ExitProcess, 0
+createButtons ENDP
+
+WinMain PROC,
+	hInst: HINSTANCE, hPrevInst: HINSTANCE, CmdLine: LPSTR, CmdShow: DWORD
+	LOCAL wc: WNDCLASSEX
+	LOCAL msg: MSG
+	LOCAL hwnd: HWND
+
+	INVOKE createMenu
+	mov wc.cbSize, SIZEOF WNDCLASSEX
+	mov wc.style, CS_HREDRAW or CS_VREDRAW
+	mov wc.lpfnWndProc, OFFSET WndProc
+	mov wc.cbClsExtra, NULL
+	mov wc.cbWndExtra, NULL
+	push hInst
+	pop wc.hInstance
+	mov wc.hbrBackground, COLOR_WINDOW+1
+	mov wc.lpszMenuName, NULL
+	mov wc.lpszClassName, OFFSET className
+	INVOKE LoadIcon, NULL, IDI_APPLICATION
+	mov wc.hIcon, eax
+	mov wc.hIconSm, eax
+	INVOKE LoadCursor, NULL, IDC_ARROW
+	mov wc.hCursor, eax
+	INVOKE RegisterClassEx, ADDR wc
+	INVOKE CreateWindowEx, NULL, ADDR className, ADDR appName, \
+		WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, \
+		CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, NULL, hMenu, \
+		hInst, NULL
+	mov hwnd, eax
+	INVOKE ShowWindow, hwnd, SW_SHOWNORMAL
+	INVOKE UpdateWindow, hwnd
+	.WHILE TRUE
+		INVOKE GetMessage, ADDR msg, NULL, 0, 0
+		.BREAK .IF (!eax)
+			INVOKE TranslateMessage, ADDR msg
+		INVOKE DispatchMessage, ADDR msg
+	.ENDW
+	mov eax, msg.wParam
+	ret
 WinMain ENDP
 
-WinProc PROC,
-    hWnd: DWORD, localMsg: DWORD, wParam: DWORD, lParam: DWORD
+WndProc PROC USES ebx ecx edx,
+	hWnd: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM
+	LOCAL hdc: HDC
+	LOCAL ps: PAINTSTRUCT
+	LOCAL rect: RECT
+	LOCAL lowordWParam: WORD
+	LOCAL p: POINT
 
-    mov eax, localMsg
+	.IF uMsg == WM_DESTROY
+		INVOKE PostQuitMessage, NULL
+	.ELSEIF uMsg == WM_CREATE
+		INVOKE createButtons, hWnd
+	.ELSEIF uMsg == WM_COMMAND	; 按钮响应事件
+		mov ebx, wParam
+		.IF bx == IDB_ONE
+			;INVOKE ShowWindow, hWnd, SW_HIDE
+		.ENDIF
+	.ELSEIF uMsg == WM_MOUSEMOVE
+		.IF drawingFlag == 1
+			mov ebx, lParam
+			mov edx, 0
+			mov dx, bx
+			sar ebx, 16
 
-    .IF eax == WM_CREATE        ; 创建窗口消息？
-        jmp WinProcExit
-    .ELSEIF eax == WM_CLOSE     ; 关闭窗口消息？
-        INVOKE PostQuitMessage, 0
-        jmp WinProcExit
-    .ELSE
-        INVOKE DefWindowProc, hWnd, localMsg, wParam, lParam
-        jmp WinProcExit
-    .ENDIF
+			.IF endX == 0
+				mov beginX, edx
+			.ELSE
+				mov eax, endX
+				mov beginX, eax
+			.ENDIF
 
-WinProcExit:
-    ret
-WinProc ENDP
+			.IF endY == 0
+				mov beginY, ebx
+			.ELSE
+				mov eax, endY
+				mov beginY, eax
+			.ENDIF
 
-ErrorHandler PROC
+			mov endX, edx
+			mov endY, ebx
+			INVOKE InvalidateRect, hWnd, ADDR workRegion, 0
+		.ENDIF
+	.ELSEIF uMsg == WM_LBUTTONDOWN
+		mov drawingFlag, 1
+	.ELSEIF uMsg == WM_LBUTTONUP
+		mov drawingFlag, 0
+		mov beginX, 0
+		mov beginY, 0
+		mov endX, 0
+		mov endY, 0
+	.ELSEIF uMsg == WM_PAINT
+		INVOKE BeginPaint, hWnd, ADDR ps
+		; ebx = pen
+		INVOKE CreatePen, PS_SOLID, 1, 255
+		mov ebx, eax
+		INVOKE MoveToEx, ps.hdc, beginX, beginY, NULL
+		INVOKE LineTo, ps.hdc, endX, endY
+		INVOKE DeleteObject, ebx
+		INVOKE EndPaint, hWnd, ADDR ps
+	.ELSE
+		INVOKE DefWindowProc, hWnd, uMsg, wParam, lParam
+		ret
+	.ENDIF
 
-.data
-pErrorMsg DWORD ?
-messageID DWORD ?
+	xor eax, eax
+	ret
+WndProc ENDP
 
-.code
-    INVOKE GetLastError
-    mov messageID, eax
-
-    ; 获取对应的消息字符串
-    INVOKE FormatMessage, FORMAT_MESSAGE_ALLOCATE_BUFFER + \
-        FORMAT_MESSAGE_FROM_SYSTEM, NULL, messageID, NULL,
-        ADDR pErrorMsg, NULL, NULL
-
-    ; 显示错误消息
-    INVOKE MessageBox, NULL, pErrorMsg, ADDR ErrorTitle,
-        MB_ICONERROR+MB_OK
-
-    ; 释放消息字符串
-    INVOKE LocalFree, pErrorMsg
-    ret
-ErrorHandler ENDP
-END WinMain
+end start
