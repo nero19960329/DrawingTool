@@ -62,7 +62,7 @@ pointY dd 0
 drawingFlag db 0
 
 ; 工作区域
-workRegion RECT <0, 0, 1025, 525>
+workRegion RECT <0, 0, 800, 600>
 
 ; 结构体定义
 PAINTDATA STRUCT
@@ -143,7 +143,7 @@ WinMain PROC,
 	INVOKE RegisterClassEx, ADDR wc
 	INVOKE CreateWindowEx, NULL, ADDR className, ADDR appName, \
 		WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, \
-		CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, NULL, hMenu, \
+		CW_USEDEFAULT, 800, 600, NULL, hMenu, \
 		hInst, NULL
 	mov hwnd, eax
 	INVOKE ShowWindow, hwnd, SW_SHOWNORMAL
