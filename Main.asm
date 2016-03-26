@@ -27,6 +27,9 @@ IDM_OPT2  dw 302
 IDM_OPT3  dw 303
 IDM_OPT4  dw 304
 
+IDM_DRAW  dw 401
+IDM_ERASE dw 402
+
 IDB_ONE   dw 3301
 IDB_TWO   dw 3302
 IDB_THREE dw 3303
@@ -37,6 +40,10 @@ newMenuStr db "新建", 0
 loadMenuStr db "载入", 0
 saveMenuStr db "保存", 0
 saveAsMenuStr db "另存为", 0
+
+fileMenuStr1 db "绘图", 0
+drawMenuStr db "画图", 0
+eraseMenuStr db "擦除", 0
 
 ; 按钮字符串
 lineButtonStr db "直线", 0
@@ -57,9 +64,15 @@ beginY dd 0
 endX dd 0
 endY dd 0
 
+curX dd 0
+curY dd 0
+
 pointX dd 0
 pointY dd 0
 drawingFlag db 0
+erasingFlag db 0
+; 画图/擦除模式
+mode db 0
 
 ; 工作区域
 workRegion RECT <0, 0, 800, 600>
@@ -87,6 +100,7 @@ start:
 ; 创建菜单
 createMenu PROC
 	LOCAL popFile: HMENU
+	LOCAL popFile1: HMENU
 
 	INVOKE CreateMenu
 	.IF eax == 0
@@ -96,6 +110,9 @@ createMenu PROC
 
 	INVOKE CreatePopupMenu
 	mov popFile, eax
+
+	INVOKE CreatePopupMenu
+	mov popFile1, eax
 	
 	INVOKE AppendMenu, hMenu, MF_POPUP, popFile, ADDR fileMenuStr
 
@@ -103,6 +120,11 @@ createMenu PROC
 	INVOKE AppendMenu, popFile, MF_STRING, IDM_OPT2, ADDR loadMenuStr
 	INVOKE AppendMenu, popFile, MF_STRING, IDM_OPT3, ADDR saveMenuStr
 	INVOKE AppendMenu, popFile, MF_STRING, IDM_OPT4, ADDR saveAsMenuStr
+
+	INVOKE AppendMenu, hMenu, MF_POPUP, popFile1, ADDR fileMenuStr1
+	
+	INVOKE AppendMenu, popFile1, MF_STRING, IDM_DRAW, ADDR drawMenuStr
+	INVOKE AppendMenu, popFile1, MF_STRING, IDM_ERASE, ADDR eraseMenuStr
 
 	ret
 
@@ -170,52 +192,87 @@ WndProc PROC USES ebx ecx edx,
 		INVOKE PostQuitMessage, NULL
 	.ELSEIF uMsg == WM_CREATE
 		INVOKE createButtons, hWnd
-	.ELSEIF uMsg == WM_COMMAND	; 按钮响应事件
+	.ELSEIF uMsg == WM_COMMAND	; 响应事件
 		mov ebx, wParam
 		.IF bx == IDB_ONE
 			;INVOKE ShowWindow, hWnd, SW_HIDE
+		.ELSEIF bx == IDM_DRAW  ; 画图模式
+			mov mode,0
+		.ELSEIF bx == IDM_ERASE ; 擦除模式
+			mov mode,1
 		.ENDIF
 	.ELSEIF uMsg == WM_MOUSEMOVE
-		.IF drawingFlag == 1
-			mov ebx, lParam
-			mov edx, 0
-			mov dx, bx
-			sar ebx, 16
+		mov ebx, lParam
+		mov edx, 0
+		mov dx, bx
+		sar ebx, 16
 
-			.IF endX == 0
-				mov beginX, edx
-			.ELSE
-				mov eax, endX
-				mov beginX, eax
+		mov curX, edx
+		mov curY, ebx
+		.IF mode == 0    ;drawing mode
+			.IF drawingFlag == 1
+				.IF endX == 0
+					mov beginX, edx
+				.ELSE
+					mov eax, endX
+					mov beginX, eax
+				.ENDIF
+
+				.IF endY == 0
+					mov beginY, ebx
+				.ELSE
+					mov eax, endY
+					mov beginY, eax
+				.ENDIF
+
+				mov endX, edx
+				mov endY, ebx
+				INVOKE InvalidateRect, hWnd, ADDR workRegion, 0
 			.ENDIF
-
-			.IF endY == 0
-				mov beginY, ebx
-			.ELSE
-				mov eax, endY
-				mov beginY, eax
-			.ENDIF
-
-			mov endX, edx
-			mov endY, ebx
-			INVOKE InvalidateRect, hWnd, ADDR workRegion, 0
 		.ENDIF
+
+		.IF mode == 1 ; Erasing mode
+			INVOKE InvalidateRect, hWnd, ADDR workRegion, 0
+
+		.ENDIF
+		
 	.ELSEIF uMsg == WM_LBUTTONDOWN
 		mov drawingFlag, 1
+		mov erasingFlag, 1
 	.ELSEIF uMsg == WM_LBUTTONUP
 		mov drawingFlag, 0
+		mov erasingFlag, 0
 		mov beginX, 0
 		mov beginY, 0
 		mov endX, 0
 		mov endY, 0
 	.ELSEIF uMsg == WM_PAINT
 		INVOKE BeginPaint, hWnd, ADDR ps
-		; ebx = pen
-		INVOKE CreatePen, PS_SOLID, 1, 255
-		mov ebx, eax
-		INVOKE MoveToEx, ps.hdc, beginX, beginY, NULL
-		INVOKE LineTo, ps.hdc, endX, endY
-		INVOKE DeleteObject, ebx
+		.IF mode == 0
+			; ebx = pen
+			;INVOKE CreatePen, PS_SOLID, 1, 0
+			;mov ebx, eax
+			INVOKE MoveToEx, ps.hdc, beginX, beginY, NULL
+			INVOKE LineTo, ps.hdc, endX, endY
+			;INVOKE DeleteObject, ebx
+		.ENDIF
+		.IF mode == 1
+			.IF erasingFlag == 1
+				;INVOKE RGB,0,0,0
+				;INVOKE SetDCBrushColor, ps.hdc, 0
+				INVOKE GetStockObject, NULL_PEN
+				INVOKE SelectObject, ps.hdc, eax
+				sub curX, 10
+				sub curY, 10
+				mov ebx, curX
+				mov edx, curY
+				add ebx, 20
+				add edx, 20
+				
+				INVOKE Rectangle, ps.hdc, curX, curY, ebx, edx
+			.ENDIF
+		.ENDIF
+
 		INVOKE EndPaint, hWnd, ADDR ps
 	.ELSE
 		INVOKE DefWindowProc, hWnd, uMsg, wParam, lParam
