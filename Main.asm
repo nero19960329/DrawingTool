@@ -147,18 +147,6 @@ createMenu PROC
 
 createMenu ENDP
 
-; 创建按钮
-createButtons PROC,
-	hWnd: HWND
-	
-	;INVOKE CreateWindowEx, NULL, ADDR buttonStr, ADDR lineButtonStr, WS_VISIBLE or WS_CHILD or BS_PUSHBUTTON, 35, 10, 80, 30, hWnd, IDB_ONE, hInstance, NULL
-
-	ret
-
-createButtons ENDP
-
-
-
 WinMain PROC,
 	hInst: HINSTANCE, hPrevInst: HINSTANCE, CmdLine: LPSTR, CmdShow: DWORD
 	LOCAL wc: WNDCLASSEX
@@ -224,8 +212,6 @@ WndProc PROC USES ebx ecx edx,
 
 	.IF uMsg == WM_DESTROY
 		INVOKE PostQuitMessage, NULL
-	.ELSEIF uMsg == WM_CREATE
-		INVOKE createButtons, hWnd
 	.ELSEIF uMsg == WM_COMMAND	; 响应事件
 		mov ebx, wParam
 		.IF bx == IDB_ONE
@@ -486,7 +472,5 @@ L4:
 	xor eax, eax
 	ret
 WndProc ENDP
-
-
 
 end start
